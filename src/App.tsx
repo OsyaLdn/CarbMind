@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { AssistantStep } from './types/assistant';
 import type { BoiledDishInput, BoiledDishResult, BoiledDishHistoryItem } from './types/boiledDish';
 import type { DishIngredient, DishResult, DishHistoryItem } from './types/dish';
+import type { UserSavedDish } from './types/userDish';
 import { loadHistory, saveHistory } from './lib/historyStorage';
 import { loadDishHistory, saveDishHistory } from './lib/dishHistoryStorage';
 import { getCarbsForProduct } from './lib/carbsLookup';
@@ -9,6 +10,10 @@ import { calculateBoiledDish } from './lib/calculateBoiledDish';
 import { calcIngredientCarbs, calcDishTotals } from './lib/calculateDish';
 import { addUserFoodItem, loadUserFoodDb } from './lib/userFoodDb';
 import { SYSTEM_FOOD_ITEMS } from './lib/systemFoodDb';
+import { useUserDishes } from './hooks/useUserDishes';
+import { SaveDishButton } from './components/SaveDishButton';
+import { UserDishLibrary } from './components/UserDishLibrary';
+import { IngredientSourceSelector } from './components/IngredientSourceSelector';
 
 type CalculatorMode = 'single' | 'dish';
 
@@ -41,6 +46,10 @@ function App() {
   const [ingredientRawWeight, setIngredientRawWeight] = useState('');
   const [ingredientRawCarbsPer100g, setIngredientRawCarbsPer100g] = useState('');
   const [dishError, setDishError] = useState('');
+  const [showIngredientSourceSelector, setShowIngredientSourceSelector] = useState(false);
+  
+  // User dishes library
+  const { userDishes, addDish, deleteDish, refreshDishes } = useUserDishes();
 
   // Temporary input state for current question
   const [inputValue, setInputValue] = useState('');
@@ -488,6 +497,9 @@ function App() {
     setDishHistory(newHistory);
     saveDishHistory(newHistory);
     
+    // Refresh user dishes to include the new history item
+    refreshDishes();
+    
     // Reset form
     setDishEmptyBowlWeight(0);
     setDishIngredients([]);
@@ -503,6 +515,9 @@ function App() {
     const newHistory = dishHistory.filter(item => item.id !== id);
     setDishHistory(newHistory);
     saveDishHistory(newHistory);
+    
+    // Refresh user dishes to update the count
+    refreshDishes();
   };
   
   // Handle new dish calculation
@@ -517,6 +532,13 @@ function App() {
     setIngredientProductName('');
     setIngredientRawWeight('');
     setIngredientRawCarbsPer100g('');
+    setShowIngredientSourceSelector(false);
+  };
+  
+  // Handler for saving dish to library
+  const handleSaveDishToLibrary = (dish: UserSavedDish) => {
+    addDish(dish);
+    alert(`✅ "${dish.name}" збережено в бібліотеку!`);
   };
   
   // Auto-fill carbs when ingredient name changes
@@ -809,45 +831,125 @@ function App() {
                         
                         {/* Add Ingredient Form */}
                         <div className="border-top pt-3">
-                          <div className="row g-2 mb-2">
-                            <div className="col-12 col-md-4">
-                              <input
-                                type="text"
-                                className="form-control form-control-sm"
-                                placeholder="Назва продукту"
-                                value={ingredientProductName}
-                                onChange={(e) => handleIngredientNameChange(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-6 col-md-3">
-                              <input
-                                type="number"
-                                step="0.1"
-                                className="form-control form-control-sm"
-                                placeholder="Вугл/100г"
-                                value={ingredientRawCarbsPer100g}
-                                onChange={(e) => setIngredientRawCarbsPer100g(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-6 col-md-3">
-                              <input
-                                type="number"
-                                step="0.1"
-                                className="form-control form-control-sm"
-                                placeholder="Вага г"
-                                value={ingredientRawWeight}
-                                onChange={(e) => setIngredientRawWeight(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-12 col-md-2">
+                          {!showIngredientSourceSelector ? (
+                            <>
+                              <div className="row g-2 mb-2">
+                                <div className="col-12 col-md-4">
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    placeholder="Назва продукту"
+                                    value={ingredientProductName}
+                                    onChange={(e) => handleIngredientNameChange(e.target.value)}
+                                  />
+                                </div>
+                                <div className="col-6 col-md-3">
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    className="form-control form-control-sm"
+                                    placeholder="Вугл/100г"
+                                    value={ingredientRawCarbsPer100g}
+                                    onChange={(e) => setIngredientRawCarbsPer100g(e.target.value)}
+                                  />
+                                </div>
+                                <div className="col-6 col-md-3">
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    className="form-control form-control-sm"
+                                    placeholder="Вага г"
+                                    value={ingredientRawWeight}
+                                    onChange={(e) => setIngredientRawWeight(e.target.value)}
+                                  />
+                                </div>
+                                <div className="col-12 col-md-2">
+                                  <button
+                                    onClick={handleAddIngredient}
+                                    className="btn btn-sm btn-success w-100"
+                                  >
+                                    + Додати
+                                  </button>
+                                </div>
+                              </div>
                               <button
-                                onClick={handleAddIngredient}
-                                className="btn btn-sm btn-success w-100"
+                                onClick={() => setShowIngredientSourceSelector(true)}
+                                className="btn btn-sm btn-outline-primary w-100"
                               >
-                                + Додати
+                                📚 Або вибрати з моїх збережених страв ({userDishes.length})
                               </button>
+                            </>
+                          ) : (
+                            <div>
+                              <IngredientSourceSelector
+                                userDishes={userDishes}
+                                onIngredientSelected={(productName, carbsPer100g) => {
+                                  setIngredientProductName(productName);
+                                  setIngredientRawCarbsPer100g(carbsPer100g.toString());
+                                  // Don't close immediately - show the selected item
+                                }}
+                              />
+                              
+                              {/* Show selected ingredient with weight input */}
+                              {ingredientProductName && ingredientRawCarbsPer100g && (
+                                <div className="card bg-success bg-opacity-10 border-success mt-3">
+                                  <div className="card-body">
+                                    <h6 className="text-success mb-2">✅ Вибрано:</h6>
+                                    <div className="mb-2">
+                                      <strong>{ingredientProductName}</strong>
+                                      <small className="text-muted d-block">
+                                        {ingredientRawCarbsPer100g} г вуглеводів / 100г
+                                      </small>
+                                    </div>
+                                    <div className="mb-2">
+                                      <label className="form-label small mb-1">Скільки грамів ви використовуєте?</label>
+                                      <div className="input-group">
+                                        <input
+                                          type="number"
+                                          step="0.1"
+                                          className="form-control"
+                                          placeholder="Вага"
+                                          value={ingredientRawWeight}
+                                          onChange={(e) => setIngredientRawWeight(e.target.value)}
+                                          autoFocus
+                                        />
+                                        <span className="input-group-text">г</span>
+                                      </div>
+                                    </div>
+                                    <div className="d-flex gap-2">
+                                      <button
+                                        onClick={() => {
+                                          setIngredientProductName('');
+                                          setIngredientRawCarbsPer100g('');
+                                          setIngredientRawWeight('');
+                                          setShowIngredientSourceSelector(false);
+                                        }}
+                                        className="btn btn-secondary"
+                                      >
+                                        Скасувати
+                                      </button>
+                                      <button
+                                        onClick={handleAddIngredient}
+                                        className="btn btn-success flex-grow-1"
+                                        disabled={!ingredientRawWeight}
+                                      >
+                                        ✅ Додати інгредієнт
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {!ingredientProductName && (
+                                <button
+                                  onClick={() => setShowIngredientSourceSelector(false)}
+                                  className="btn btn-sm btn-secondary w-100 mt-2"
+                                >
+                                  ← Повернутись до ручного вводу
+                                </button>
+                              )}
                             </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -969,6 +1071,15 @@ function App() {
                           <button onClick={handleSaveDish} className="btn btn-success btn-lg">
                             💾 Зберегти в історію
                           </button>
+                          
+                          {/* Save to Library Button */}
+                          <SaveDishButton
+                            ingredients={dishIngredients}
+                            carbsPer100g={dishResult.carbsPer100gDish}
+                            breadUnitsPer100g={dishResult.carbsPer100gDish / 12}
+                            onSave={handleSaveDishToLibrary}
+                          />
+                          
                           <button onClick={handleNewDishCalc} className="btn btn-outline-primary">
                             Порахувати ще одну страву
                           </button>
@@ -1447,6 +1558,18 @@ function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+            
+            {/* User Dishes Library Section */}
+            {userDishes.length > 0 && (
+              <div className="card shadow-lg border-0 rounded-4 mt-4">
+                <div className="card-body p-4">
+                  <UserDishLibrary
+                    userDishes={userDishes}
+                    onDelete={deleteDish}
+                  />
                 </div>
               </div>
             )}
