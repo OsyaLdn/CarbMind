@@ -16,15 +16,22 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="CarbMind" />
     <link rel="apple-touch-icon" href="/CarbMind/icon-192.png" />
-    <script type="module" crossorigin src="/CarbMind/assets/index-DsW5RDOY.js"></script>
+    <script type="module" crossorigin src="/CarbMind/assets/index-B40aBr0c.js"></script>
     <link rel="stylesheet" crossorigin href="/CarbMind/assets/index-Dj3MUMdI.css">
   </head>
   <body>
     <div id="root"></div>
     
-    <!-- Service Worker Registration -->
+    <!-- Service Worker Registration (disabled on localhost to avoid caching while developing) -->
     <script>
-      if ('serviceWorker' in navigator) {
+      const isLocalhost = Boolean(
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === '[::1]' ||
+        window.location.hostname.endsWith('.local')
+      );
+
+      if ('serviceWorker' in navigator && !isLocalhost) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/CarbMind/sw.js')
             .then(registration => {
@@ -34,6 +41,8 @@
               console.log('❌ Service Worker registration failed:', error);
             });
         });
+      } else if (isLocalhost) {
+        console.log('ℹ️ Service Worker disabled on localhost to always serve the latest code.');
       }
     </script>
   </body>
