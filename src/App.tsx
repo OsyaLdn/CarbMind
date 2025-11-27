@@ -344,6 +344,18 @@ function App() {
     setStep('askEmptyBowlWeight');
   };
 
+  // Handle cancel - return to idle
+  const handleCancel = () => {
+    setStep('idle');
+    setCurrentInput(null);
+    setCurrentResult(null);
+    setMealName('');
+    setInputValue('');
+    setErrorMessage('');
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
   // Handle delete from history
   const handleDeleteFromHistory = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -992,9 +1004,14 @@ function App() {
                       {errorMessage && (
                         <div className="alert alert-danger py-2">{errorMessage}</div>
                       )}
-                      <button type="submit" className="btn btn-primary w-100">
-                        Далі
-                      </button>
+                      <div className="d-flex gap-2">
+                        <button type="button" onClick={handleCancel} className="btn btn-outline-secondary">
+                          Скасувати
+                        </button>
+                        <button type="submit" className="btn btn-primary flex-grow-1">
+                          Далі
+                        </button>
+                      </div>
                     </form>
                   </div>
                 )}
@@ -1031,9 +1048,14 @@ function App() {
                       {errorMessage && (
                         <div className="alert alert-danger py-2">{errorMessage}</div>
                       )}
-                      <button type="submit" className="btn btn-primary w-100">
-                        Далі
-                      </button>
+                      <div className="d-flex gap-2">
+                        <button type="button" onClick={handleCancel} className="btn btn-outline-secondary">
+                          Скасувати
+                        </button>
+                        <button type="submit" className="btn btn-primary flex-grow-1">
+                          Далі
+                        </button>
+                      </div>
                     </form>
                   </div>
                 )}
@@ -1094,9 +1116,14 @@ function App() {
                       {errorMessage && (
                         <div className="alert alert-danger py-2">{errorMessage}</div>
                       )}
-                      <button type="submit" className="btn btn-primary w-100">
-                        Далі
-                      </button>
+                      <div className="d-flex gap-2">
+                        <button type="button" onClick={handleCancel} className="btn btn-outline-secondary">
+                          Скасувати
+                        </button>
+                        <button type="submit" className="btn btn-primary flex-grow-1">
+                          Далі
+                        </button>
+                      </div>
                     </form>
                   </div>
                 )}
@@ -1124,9 +1151,14 @@ function App() {
                       {errorMessage && (
                         <div className="alert alert-danger py-2">{errorMessage}</div>
                       )}
-                      <button type="submit" className="btn btn-primary w-100">
-                        Далі
-                      </button>
+                      <div className="d-flex gap-2">
+                        <button type="button" onClick={handleCancel} className="btn btn-outline-secondary">
+                          Скасувати
+                        </button>
+                        <button type="submit" className="btn btn-primary flex-grow-1">
+                          Далі
+                        </button>
+                      </div>
                     </form>
                   </div>
                 )}
