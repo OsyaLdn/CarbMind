@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import type { AssistantStep } from './types/assistant';
-import type { BoiledDishInput, BoiledDishResult, BoiledDishHistoryItem } from './types/boiledDish';
-import type { DishIngredient, DishResult, DishHistoryItem } from './types/dish';
+import type { BoiledDishInput, BoiledDishResult } from './types/boiledDish';
+import type { DishIngredient, DishResult } from './types/dish';
 import type { UserSavedDish } from './types/userDish';
-import { loadHistory, saveHistory } from './lib/historyStorage';
-import { loadDishHistory, saveDishHistory } from './lib/dishHistoryStorage';
 import { getCarbsForProduct } from './lib/carbsLookup';
 import { calculateBoiledDish } from './lib/calculateBoiledDish';
 import { calcIngredientCarbs, calcDishTotals } from './lib/calculateDish';
@@ -25,12 +23,9 @@ function App() {
   const [step, setStep] = useState<AssistantStep>('idle');
   const [currentInput, setCurrentInput] = useState<Partial<BoiledDishInput> | null>(null);
   const [currentResult, setCurrentResult] = useState<BoiledDishResult | null>(null);
-  const [mealName, setMealName] = useState('');
   const [shouldSaveFood, setShouldSaveFood] = useState(true);
   const [foodFoundInDb, setFoodFoundInDb] = useState(false);
-  
-  // Load history from localStorage on mount (lazy initialization)
-  const [history, setHistory] = useState<BoiledDishHistoryItem[]>(() => loadHistory());
+  const [singleUseBowl, setSingleUseBowl] = useState<boolean>(true);
   
   // Dish calculator state
   const [useBowl, setUseBowl] = useState<boolean>(true);
@@ -38,8 +33,6 @@ function App() {
   const [dishIngredients, setDishIngredients] = useState<DishIngredient[]>([]);
   const [dishFullBowlWeight, setDishFullBowlWeight] = useState<number>(0);
   const [dishResult, setDishResult] = useState<DishResult | null>(null);
-  const [dishName, setDishName] = useState('');
-  const [dishHistory, setDishHistory] = useState<DishHistoryItem[]>(() => loadDishHistory());
   
   // Ingredient form state
   const [ingredientProductName, setIngredientProductName] = useState('');
@@ -49,7 +42,7 @@ function App() {
   const [showIngredientSourceSelector, setShowIngredientSourceSelector] = useState(false);
   
   // User dishes library
-  const { userDishes, addDish, deleteDish, refreshDishes } = useUserDishes();
+  const { userDishes, addDish, deleteDish } = useUserDishes();
 
   // Temporary input state for current question
   const [inputValue, setInputValue] = useState('');
@@ -57,14 +50,16 @@ function App() {
   // Error message state for validation
   const [errorMessage, setErrorMessage] = useState('');
   
-  // Autocomplete suggestions state
+  // Autocomplete suggestions state (single product)
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   
-  // Selected history item for detail popup
-  const [selectedHistoryItem, setSelectedHistoryItem] = useState<BoiledDishHistoryItem | null>(null);
-
+  // Autocomplete suggestions state (multi-ingredient input)
+  const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
+  const [showIngredientSuggestions, setShowIngredientSuggestions] = useState(false);
+  const ingredientSuggestionsRef = useRef<HTMLDivElement>(null);
+  
   // Wizard steps configuration
   const wizardSteps = [
     { id: 'askEmptyBowlWeight', label: 'Тара', icon: '🥣' },
@@ -72,13 +67,22 @@ function App() {
     { id: 'askRawCarbsPer100g', label: 'Вуглеводи', icon: '📊' },
     { id: 'askRawWeight', label: 'Вага сирого', icon: '⚖️' },
     { id: 'askFullBowlWeight', label: 'З стравою', icon: '🍲' },
-    { id: 'askMealName', label: 'Назва страви', icon: '✏️' },
     { id: 'showResult', label: 'Результат', icon: '✅' },
   ];
 
   const getCurrentStepIndex = () => {
     const idx = wizardSteps.findIndex(s => s.id === step);
     return idx === -1 ? 0 : idx;
+  };
+  
+  const formatNumber = (
+    value: number | string | null | undefined,
+    decimals = 2
+  ): string => {
+    if (value === null || value === undefined) return '0';
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    if (!Number.isFinite(num)) return '0';
+    return Number(num.toFixed(decimals)).toString();
   };
 
   // Validate product name
@@ -156,14 +160,29 @@ function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSuggestions]);
+  
+  useEffect(() => {
+    const handleIngredientClickOutside = (event: MouseEvent) => {
+      if (!showIngredientSuggestions) return;
+      if (
+        ingredientSuggestionsRef.current &&
+        !ingredientSuggestionsRef.current.contains(event.target as Node)
+      ) {
+        setShowIngredientSuggestions(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleIngredientClickOutside);
+    return () => document.removeEventListener('mousedown', handleIngredientClickOutside);
+  }, [showIngredientSuggestions]);
 
   // Start assistant handler
   const handleStartAssistant = () => {
     setCurrentInput({});
     setCurrentResult(null);
-    setMealName('');
     setShouldSaveFood(true);
     setFoodFoundInDb(false);
+    setSingleUseBowl(true);
     setInputValue('');
     setErrorMessage('');
     setSuggestions([]);
@@ -183,8 +202,14 @@ function App() {
       setErrorMessage('');
       
       // Prefill inputValue with the existing value for that step
-      if (targetStep === 'askEmptyBowlWeight' && currentInput.emptyBowlWeight != null) {
-        setInputValue(String(currentInput.emptyBowlWeight));
+      if (targetStep === 'askEmptyBowlWeight') {
+        if (currentInput.emptyBowlWeight != null) {
+          setInputValue(String(currentInput.emptyBowlWeight));
+          setSingleUseBowl(true);
+        } else {
+          setSingleUseBowl(false);
+          setInputValue('');
+        }
       } else if (targetStep === 'askProduct' && currentInput.productName) {
         setInputValue(currentInput.productName);
       } else if (targetStep === 'askRawCarbsPer100g' && currentInput.rawCarbsPer100g != null) {
@@ -274,11 +299,14 @@ function App() {
     e.preventDefault();
     setErrorMessage('');
     
-    const value = parseFloat(inputValue);
+    let value = 0;
     
-    if (isNaN(value) || value < 0) {
-      setErrorMessage('Введіть коректне значення (0 або більше)');
-      return;
+    if (singleUseBowl) {
+      value = parseFloat(inputValue);
+      if (isNaN(value) || value < 0) {
+        setErrorMessage('Введіть коректне значення (0 або більше)');
+        return;
+      }
     }
 
     // Reset fullBowlWeight and result when changing emptyBowlWeight
@@ -305,7 +333,7 @@ function App() {
       return;
     }
 
-    if (currentInput && value <= (currentInput.emptyBowlWeight || 0)) {
+    if (singleUseBowl && currentInput && value <= (currentInput.emptyBowlWeight || 0)) {
       setErrorMessage('Вага готової страви має бути більшою за вагу порожньої миски');
       return;
     }
@@ -320,63 +348,28 @@ function App() {
       setCurrentResult(result);
       setCurrentInput(updatedInput);
       setInputValue('');
-      setStep('askMealName');
+      setStep('showResult');
     } catch {
       setErrorMessage('Помилка розрахунку. Перевірте введені дані');
     }
   };
 
-  // Handle meal name submission
-  const handleMealNameSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setMealName(inputValue.trim());
-    setInputValue('');
-    setStep('showResult');
-  };
-
-  // Skip meal name
-  const handleSkipMealName = () => {
-    setMealName('');
-    setStep('showResult');
-  };
-
-  // Handle save to history
-  const handleSaveToHistory = () => {
-    if (!currentInput || !currentResult) return;
-
-    const now = new Date();
-    const timeOfDay = now.toLocaleTimeString('uk-UA', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-
-    const historyItem: BoiledDishHistoryItem = {
-      ...(currentInput as BoiledDishInput),
-      ...currentResult,
-      id: Date.now().toString(),
-      createdAt: now.toISOString(),
-      mealName: mealName || undefined,
-      timeOfDay,
-    };
-
-    const newHistory = [historyItem, ...history];
-    setHistory(newHistory);
-    saveHistory(newHistory);
-
+  // Handle save single product to user dishes
+  const handleSaveSingleProduct = (dish: UserSavedDish) => {
+    addDish(dish);
     // Reset and go to idle
     setStep('idle');
     setCurrentInput(null);
     setCurrentResult(null);
-    setMealName('');
   };
 
   // Handle new dish calculation
   const handleNewDish = () => {
     setCurrentInput({});
     setCurrentResult(null);
-    setMealName('');
     setShouldSaveFood(true);
     setFoodFoundInDb(false);
+    setSingleUseBowl(true);
     setInputValue('');
     setErrorMessage('');
     setSuggestions([]);
@@ -389,30 +382,12 @@ function App() {
     setStep('idle');
     setCurrentInput(null);
     setCurrentResult(null);
-    setMealName('');
     setInputValue('');
     setErrorMessage('');
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
-  // Handle delete from history
-  const handleDeleteFromHistory = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newHistory = history.filter(item => item.id !== id);
-    setHistory(newHistory);
-    saveHistory(newHistory);
-  };
-
-  // Format date for display
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('uk-UA', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
 
   // === DISH CALCULATOR HANDLERS ===
   
@@ -458,6 +433,8 @@ function App() {
     setIngredientProductName('');
     setIngredientRawWeight('');
     setIngredientRawCarbsPer100g('');
+    setIngredientSuggestions([]);
+    setShowIngredientSuggestions(false);
   };
   
   // Handle deleting ingredient
@@ -498,17 +475,6 @@ function App() {
     }
   };
   
-  // Handle deleting dish from history
-  const handleDeleteDish = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newHistory = dishHistory.filter(item => item.id !== id);
-    setDishHistory(newHistory);
-    saveDishHistory(newHistory);
-    
-    // Refresh user dishes to update the count
-    refreshDishes();
-  };
-  
   // Handle new dish calculation
   const handleNewDishCalc = () => {
     setUseBowl(true);
@@ -516,25 +482,18 @@ function App() {
     setDishIngredients([]);
     setDishFullBowlWeight(0);
     setDishResult(null);
-    setDishName('');
     setDishError('');
     setIngredientProductName('');
     setIngredientRawWeight('');
     setIngredientRawCarbsPer100g('');
     setShowIngredientSourceSelector(false);
+    setIngredientSuggestions([]);
+    setShowIngredientSuggestions(false);
   };
   
   // Handler for saving dish to library
   const handleSaveDishToLibrary = (dish: UserSavedDish) => {
     addDish(dish);
-  };
-
-  // Handler for saving dish to history (called from SaveDishButton)
-  const handleSaveDishToHistory = (historyItem: DishHistoryItem) => {
-    const newHistory = [historyItem, ...dishHistory];
-    setDishHistory(newHistory);
-    saveDishHistory(newHistory);
-    refreshDishes();
   };
   
   // Auto-fill carbs when ingredient name changes
@@ -544,6 +503,20 @@ function App() {
     if (carbs !== null) {
       setIngredientRawCarbsPer100g(carbs.toString());
     }
+    
+    const filtered = getSuggestions(value);
+    setIngredientSuggestions(filtered);
+    setShowIngredientSuggestions(filtered.length > 0);
+  };
+  
+  const handleIngredientSuggestionClick = (suggestion: string) => {
+    setIngredientProductName(suggestion);
+    const carbs = getCarbsForProduct(suggestion.trim());
+    if (carbs !== null) {
+      setIngredientRawCarbsPer100g(carbs.toString());
+    }
+    setIngredientSuggestions([]);
+    setShowIngredientSuggestions(false);
   };
 
   return (
@@ -683,14 +656,20 @@ function App() {
                     <div className="card-body p-3">
                       <h6 className="mb-2" style={{ fontSize: '12px' }}>📝 Введені дані:</h6>
                       <div className="small text-muted">
-                        {currentInput.emptyBowlWeight !== undefined && (
+                        {singleUseBowl && currentInput.emptyBowlWeight !== undefined && currentInput.emptyBowlWeight > 0 && (
                           <div>✓ Порожня тара: <strong>{currentInput.emptyBowlWeight}г</strong></div>
+                        )}
+                        {!singleUseBowl && (
+                          <div>✓ Без тари (прямо на вазі)</div>
                         )}
                         {currentInput.productName && (
                           <div>✓ Продукт: <strong className="text-capitalize">{currentInput.productName}</strong></div>
                         )}
                         {currentInput.rawCarbsPer100g !== undefined && (
-                          <div>✓ Вуглеводів у 100г сирого: <strong>{currentInput.rawCarbsPer100g}г</strong></div>
+                          <div>
+                            ✓ Вуглеводів у 100г сирого:{' '}
+                            <strong>{formatNumber(currentInput.rawCarbsPer100g)}г</strong>
+                          </div>
                         )}
                         {currentInput.rawWeight && (
                           <div>✓ Вага сирого продукту: <strong>{currentInput.rawWeight}г</strong></div>
@@ -795,10 +774,10 @@ function App() {
                             <table className="table table-sm">
                               <thead>
                                 <tr>
-                                  <th>Назва</th>
-                                  <th className="text-end">Сирі г</th>
-                                  <th className="text-end">Вугл/100г</th>
-                                  <th className="text-end">Вугл всього</th>
+                                  <th className="small">Назва</th>
+                                  <th className="text-end small">Сирі(г)</th>
+                                  <th className="text-end small">в/100г</th>
+                                  <th className="text-end small">всього</th>
                                   <th></th>
                                 </tr>
                               </thead>
@@ -806,8 +785,8 @@ function App() {
                                 {dishIngredients.map((ing) => (
                                   <tr key={ing.id}>
                                     <td className="text-capitalize">{ing.productName}</td>
-                                    <td className="text-end">{ing.rawWeight}г</td>
-                                    <td className="text-end">{ing.rawCarbsPer100g}г</td>
+                                    <td className="text-end">{formatNumber(ing.rawWeight, 2)}г</td>
+                                    <td className="text-end">{formatNumber(ing.rawCarbsPer100g)}г</td>
                                     <td className="text-end fw-bold">{ing.totalCarbs.toFixed(1)}г</td>
                                     <td className="text-end">
                                       <button
@@ -831,13 +810,29 @@ function App() {
                             <>
                               <div className="row g-2 mb-2">
                                 <div className="col-12 col-md-4">
-                                  <input
-                                    type="text"
-                                    className="form-control form-control-sm"
-                                    placeholder="Назва продукту"
-                                    value={ingredientProductName}
-                                    onChange={(e) => handleIngredientNameChange(e.target.value)}
-                                  />
+                                  <div className="position-relative" ref={ingredientSuggestionsRef}>
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Назва продукту"
+                                      value={ingredientProductName}
+                                      onChange={(e) => handleIngredientNameChange(e.target.value)}
+                                    />
+                                    {showIngredientSuggestions && ingredientSuggestions.length > 0 && (
+                                      <div className="list-group position-absolute w-100 mt-1 shadow-lg" style={{ zIndex: 1000 }}>
+                                        {ingredientSuggestions.map((suggestion, index) => (
+                                          <button
+                                            key={index}
+                                            type="button"
+                                            className="list-group-item list-group-item-action text-capitalize"
+                                            onClick={() => handleIngredientSuggestionClick(suggestion)}
+                                          >
+                                            {suggestion}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="col-6 col-md-3">
                                   <input
@@ -869,7 +864,10 @@ function App() {
                                 </div>
                               </div>
                               <button
-                                onClick={() => setShowIngredientSourceSelector(true)}
+                                onClick={() => {
+                                  setShowIngredientSourceSelector(true);
+                                  setShowIngredientSuggestions(false);
+                                }}
                                 className="btn btn-sm btn-outline-primary w-100"
                               >
                                 📚 Або вибрати з моїх збережених страв ({userDishes.length})
@@ -894,7 +892,7 @@ function App() {
                                     <div className="mb-2">
                                       <strong>{ingredientProductName}</strong>
                                       <small className="text-muted d-block">
-                                        {ingredientRawCarbsPer100g} г вуглеводів / 100г
+                                        {formatNumber(ingredientRawCarbsPer100g || 0)} г вуглеводів / 100г
                                       </small>
                                     </div>
                                     <div className="mb-2">
@@ -918,6 +916,8 @@ function App() {
                                           setIngredientProductName('');
                                           setIngredientRawCarbsPer100g('');
                                           setIngredientRawWeight('');
+                                          setShowIngredientSuggestions(false);
+                                          setIngredientSuggestions([]);
                                           setShowIngredientSourceSelector(false);
                                         }}
                                         className="btn btn-secondary"
@@ -938,7 +938,10 @@ function App() {
                               
                               {!ingredientProductName && (
                                 <button
-                                  onClick={() => setShowIngredientSourceSelector(false)}
+                                  onClick={() => {
+                                    setShowIngredientSourceSelector(false);
+                                    setShowIngredientSuggestions(false);
+                                  }}
                                   className="btn btn-sm btn-secondary w-100 mt-2"
                                 >
                                   ← Повернутись до ручного вводу
@@ -1051,29 +1054,13 @@ function App() {
                           </div>
                         </div>
                         
-                        {/* Save to History */}
-                        <div className="mb-3">
-                          <label className="form-label">Назва страви:</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="Наприклад: Борщ з м'ясом"
-                            value={dishName}
-                            onChange={(e) => setDishName(e.target.value)}
-                          />
-                        </div>
-                        
                         <div className="d-grid gap-2">
-                          {/* Combined Save Button - saves to library and optionally to history */}
+                          {/* Save Button */}
                           <SaveDishButton
                             ingredients={dishIngredients}
                             carbsPer100g={dishResult.carbsPer100gDish}
                             breadUnitsPer100g={dishResult.carbsPer100gDish / 12}
                             onSave={handleSaveDishToLibrary}
-                            dishResult={dishResult}
-                            emptyBowlWeight={dishEmptyBowlWeight}
-                            fullBowlWeight={dishFullBowlWeight}
-                            onSaveToHistory={handleSaveDishToHistory}
                           />
                           
                           <button onClick={handleNewDishCalc} className="btn btn-outline-primary">
@@ -1088,25 +1075,66 @@ function App() {
                 {/* Step: askEmptyBowlWeight */}
                 {step === 'askEmptyBowlWeight' && (
                   <div>
-                    <h3 className="h5 mb-3">Скільки важить порожня тара?</h3>
+                    <h3 className="h5 mb-3">Вага порожньої тари</h3>
                     <p className="text-muted small mb-3">
-                      Спочатку зважте порожню миску, в якій будете готувати
+                      Оберіть, чи використовуєте ви тару для приготування
                     </p>
                     <form onSubmit={handleEmptyBowlWeightSubmit}>
                       <div className="mb-3">
-                        <input
-                          type="number"
-                          step="0.1"
-                          className="form-control form-control-lg"
-                          placeholder="Наприклад: 300"
-                          value={inputValue}
-                          onChange={(e) => {
-                            setInputValue(e.target.value);
-                            setErrorMessage('');
-                          }}
-                          autoFocus
-                        />
-                        <small className="text-muted">Вага в грамах (можна 0, якщо тари немає)</small>
+                        <div className="d-flex flex-column gap-3 mb-3">
+                          <div className="form-check">
+                            <input
+                              type="radio"
+                              className="form-check-input"
+                              name="singleBowlOption"
+                              id="singleWithBowl"
+                              checked={singleUseBowl}
+                              onChange={() => {
+                                setSingleUseBowl(true);
+                                setInputValue('');
+                                setErrorMessage('');
+                              }}
+                            />
+                            <label className="form-check-label" htmlFor="singleWithBowl">
+                              З тарою
+                            </label>
+                          </div>
+                          <div className="form-check">
+                            <input
+                              type="radio"
+                              className="form-check-input"
+                              name="singleBowlOption"
+                              id="singleNoBowl"
+                              checked={!singleUseBowl}
+                              onChange={() => {
+                                setSingleUseBowl(false);
+                                setInputValue('');
+                                setErrorMessage('');
+                              }}
+                            />
+                            <label className="form-check-label" htmlFor="singleNoBowl">
+                              Без тари (прямо на вазі)
+                            </label>
+                          </div>
+                        </div>
+                        
+                        {singleUseBowl && (
+                          <div>
+                            <input
+                              type="number"
+                              step="0.1"
+                              className="form-control form-control-lg"
+                              placeholder="Наприклад: 300"
+                              value={inputValue}
+                              onChange={(e) => {
+                                setInputValue(e.target.value);
+                                setErrorMessage('');
+                              }}
+                              autoFocus
+                            />
+                            <small className="text-muted">Вага в грамах (можна 0, якщо тари немає)</small>
+                          </div>
+                        )}
                       </div>
                       {errorMessage && (
                         <div className="alert alert-danger py-2">{errorMessage}</div>
@@ -1273,14 +1301,16 @@ function App() {
                 {/* Step: askFullBowlWeight */}
                 {step === 'askFullBowlWeight' && (
                   <div>
-                    <h3 className="h5 mb-3">Скільки важить миска з готовою стравою?</h3>
+                    <h3 className="h5 mb-3">
+                      {singleUseBowl ? 'Скільки важить миска з готовою стравою?' : 'Скільки важить готова страва?'}
+                    </h3>
                     <form onSubmit={handleFullBowlWeightSubmit}>
                       <div className="mb-3">
                         <input
                           type="number"
                           step="0.1"
                           className="form-control form-control-lg"
-                          placeholder="Наприклад: 800"
+                          placeholder={singleUseBowl ? "Наприклад: 800" : "Наприклад: 500"}
                           value={inputValue}
                           onChange={(e) => {
                             setInputValue(e.target.value);
@@ -1288,7 +1318,9 @@ function App() {
                           }}
                           autoFocus
                         />
-                        <small className="text-muted">Вага в грамах (миска + готова страва)</small>
+                        <small className="text-muted">
+                          {singleUseBowl ? 'Вага в грамах (миска + готова страва)' : 'Вага в грамах (тільки страва)'}
+                        </small>
                       </div>
                       {errorMessage && (
                         <div className="alert alert-danger py-2">{errorMessage}</div>
@@ -1296,39 +1328,6 @@ function App() {
                       <button type="submit" className="btn btn-primary w-100">
                         Розрахувати
                       </button>
-                    </form>
-                  </div>
-                )}
-
-                {/* Step: askMealName */}
-                {step === 'askMealName' && currentResult && (
-                  <div>
-                    <h3 className="h5 mb-3">Дайте назву своїй страві (необов'язково)</h3>
-                    <p className="text-muted small mb-3">
-                      Це допоможе вам швидше знайти цю страву в історії
-                    </p>
-                    <form onSubmit={handleMealNameSubmit}>
-                      <div className="mb-3">
-                        <input
-                          type="text"
-                          className="form-control form-control-lg"
-                          placeholder="Наприклад: Гречана каша на сніданок"
-                          value={inputValue}
-                          onChange={(e) => {
-                            setInputValue(e.target.value);
-                            setErrorMessage('');
-                          }}
-                          autoFocus
-                        />
-                      </div>
-                      <div className="d-flex gap-2">
-                        <button type="button" onClick={handleSkipMealName} className="btn btn-outline-secondary">
-                          Пропустити
-                        </button>
-                        <button type="submit" className="btn btn-primary flex-grow-1">
-                          Далі
-                        </button>
-                      </div>
                     </form>
                   </div>
                 )}
@@ -1343,7 +1342,6 @@ function App() {
                         </svg>
                       </div>
                       <p className="text-muted mb-1">Готово!</p>
-                      {mealName && <h2 className="h4 mb-2">{mealName}</h2>}
                       <h3 className="h5 text-capitalize text-muted">{currentInput.productName}</h3>
                     </div>
 
@@ -1404,9 +1402,27 @@ function App() {
                     </div>
 
                     <div className="d-grid gap-2">
-                      <button onClick={handleSaveToHistory} className="btn btn-success btn-lg">
-                        💾 Зберегти в історію
-                      </button>
+                      {/* Save single product as dish */}
+                      {currentInput && currentResult && 
+                       currentInput.productName && 
+                       currentInput.rawWeight !== undefined && 
+                       currentInput.rawCarbsPer100g !== undefined && (() => {
+                        const ingredient: DishIngredient = {
+                          id: 'single-product',
+                          productName: currentInput.productName,
+                          rawWeight: currentInput.rawWeight,
+                          rawCarbsPer100g: currentInput.rawCarbsPer100g,
+                          totalCarbs: calcIngredientCarbs(currentInput.rawWeight, currentInput.rawCarbsPer100g),
+                        };
+                        return (
+                          <SaveDishButton
+                            ingredients={[ingredient]}
+                            carbsPer100g={currentResult.carbsPer100gCooked}
+                            breadUnitsPer100g={currentResult.carbsPer100gCooked / 12}
+                            onSave={handleSaveSingleProduct}
+                          />
+                        );
+                      })()}
                       <button onClick={handleNewDish} className="btn btn-outline-primary">
                         Порахувати ще одну страву
                       </button>
@@ -1415,148 +1431,6 @@ function App() {
                 )}
               </div>
             </div>
-            
-            {/* Single Product History Section */}
-            {history.length > 0 && (
-              <div className="card shadow-lg border-0 rounded-4">
-                <div className="card-body p-4">
-                  <h2 className="h4 mb-3">Історія</h2>
-                  <div className="list-group list-group-flush">
-                    {history.map((item) => (
-                      <div
-                        key={item.id}
-                        className="list-group-item list-group-item-action border-0 rounded-3 mb-2 d-flex justify-content-between align-items-center"
-                      >
-                        <button
-                          onClick={() => setSelectedHistoryItem(item)}
-                          className="btn btn-link text-decoration-none flex-grow-1 d-flex justify-content-between align-items-center text-start p-0"
-                        >
-                          <div>
-                            {item.mealName && (
-                              <h6 className="mb-0 text-dark">{item.mealName}</h6>
-                            )}
-                            <small className="text-capitalize text-muted">
-                              {item.productName}
-                              {item.timeOfDay && ` • ${item.timeOfDay}`}
-                            </small>
-                            <br />
-                            <small className="text-muted">{formatDate(item.createdAt)}</small>
-                          </div>
-                          <div className="text-end me-3">
-                            <div className="d-flex flex-column gap-3">
-                              <div>
-                                <div className="h5 mb-0 text-success fw-bold">
-                                  {item.carbsPer100gCooked.toFixed(1)}
-                                </div>
-                              </div>
-                              <div className="">
-                                <div className="h5 mb-0 text-warning fw-bold">
-                                  {(item.carbsPer100gCooked / 12).toFixed(2)}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteFromHistory(item.id, e)}
-                          className="btn btn-sm btn-outline-danger border-0"
-                          title="Видалити"
-                          aria-label="Видалити"
-                        >
-                          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
-                            <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Dish History Section */}
-            {dishHistory.length > 0 && (
-              <div className="card shadow-lg border-0 rounded-4 mt-4">
-                <div className="card-body p-4">
-                  <h2 className="h4 mb-3">Історія страв</h2>
-                  <div className="list-group list-group-flush">
-                    {dishHistory.map((item) => (
-                      <div
-                        key={item.id}
-                        className="list-group-item list-group-item-action border-0 rounded-3 mb-2 d-flex justify-content-between align-items-center"
-                      >
-                        <div className="flex-grow-1">
-                          <h6 className="mb-0 text-dark">{item.dishName}</h6>
-                          <small className="text-muted">
-                            {formatDate(item.createdAt)}
-                            {item.timeOfDay && ` • ${item.timeOfDay}`}
-                          </small>
-                          <br />
-                          <small className="text-muted">{item.ingredients.length} інгредієнтів</small>
-                          
-                          {/* Expandable ingredients list */}
-                          <details className="mt-2">
-                            <summary className="text-primary small" style={{ cursor: 'pointer', listStyle: 'none', outline: 'none' }}>
-                              ▼ Показати інгредієнти
-                            </summary>
-                            <div className="mt-2">
-                              <table className="table table-sm table-borderless mb-0">
-                                <thead>
-                                  <tr className="small text-muted">
-                                    <th>Назва</th>
-                                    <th className="text-end">Вага</th>
-                                    <th className="text-end">Вугл/100г</th>
-                                    <th className="text-end">ХО/100г</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {item.ingredients.map((ing) => (
-                                    <tr key={ing.id} className="small">
-                                      <td className="text-capitalize">{ing.productName}</td>
-                                      <td className="text-end">{ing.rawWeight}г</td>
-                                      <td className="text-end">{ing.rawCarbsPer100g.toFixed(1)}г</td>
-                                      <td className="text-end">{(ing.rawCarbsPer100g / 12).toFixed(2)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </details>
-                        </div>
-                        
-                        <div className="text-end me-3">
-                          <div className="d-flex flex-column gap-3">
-                            <div>
-                              <div className="h5 mb-0 text-success fw-bold">
-                                {item.result.carbsPer100gDish.toFixed(1)}
-                              </div>
-                            </div>
-                            <div className="">
-                              <div className="h5 mb-0 text-warning fw-bold">
-                                {(item.result.carbsPer100gDish / 12).toFixed(2)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <button
-                          onClick={(e) => handleDeleteDish(item.id, e)}
-                          className="btn btn-sm btn-outline-danger border-0"
-                          title="Видалити"
-                          aria-label="Видалити"
-                        >
-                          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
-                            <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
             
             {/* User Dishes Library Section */}
             {userDishes.length > 0 && (
@@ -1572,119 +1446,6 @@ function App() {
           </div>
         </div>
       </div>
-
-      {/* History Item Detail Modal */}
-      {selectedHistoryItem && (
-        <div 
-          className="modal d-block" 
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setSelectedHistoryItem(null)}
-        >
-          <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-content rounded-4">
-              <div className="modal-header border-0">
-                <div>
-                  {selectedHistoryItem?.mealName && (
-                    <h5 className="modal-title mb-1">{selectedHistoryItem.mealName}</h5>
-                  )}
-                  <h6 className="text-capitalize text-muted mb-0">{selectedHistoryItem?.productName}</h6>
-                  <small className="text-muted">
-                    {formatDate(selectedHistoryItem?.createdAt || '')}
-                    {selectedHistoryItem?.timeOfDay && ` о ${selectedHistoryItem.timeOfDay}`}
-                  </small>
-                </div>
-                <button 
-                  type="button" 
-                  className="btn-close" 
-                  onClick={() => setSelectedHistoryItem(null)}
-                ></button>
-              </div>
-              <div className="modal-body">
-                <h6 className="mb-3">📊 Вихідні дані:</h6>
-                <div className="row g-2 mb-4">
-                  <div className="col-6">
-                    <div className="card bg-light border-0">
-                      <div className="card-body p-2">
-                        <small className="text-muted d-block">Вага сирого</small>
-                        <strong>{selectedHistoryItem?.rawWeight ?? 0}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="card bg-light border-0">
-                      <div className="card-body p-2">
-                        <small className="text-muted d-block">Вуглеводів/100г</small>
-                        <strong>{selectedHistoryItem?.rawCarbsPer100g ?? 0}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="card bg-light border-0">
-                      <div className="card-body p-2">
-                        <small className="text-muted d-block">Порожня тара</small>
-                        <strong>{selectedHistoryItem?.emptyBowlWeight ?? 0}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="card bg-light border-0">
-                      <div className="card-body p-2">
-                        <small className="text-muted d-block">З стравою</small>
-                        <strong>{selectedHistoryItem?.fullBowlWeight ?? 0}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <h6 className="mb-3">✅ Результати:</h6>
-                <div className="row g-2">
-                  <div className="col-12">
-                    <div className="card bg-primary bg-opacity-10 border-0">
-                      <div className="card-body p-2 text-center">
-                        <small className="text-primary d-block">Всього вуглеводів</small>
-                        <strong className="text-primary">{(selectedHistoryItem?.totalCarbs ?? 0).toFixed(1)}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="card bg-success bg-opacity-10 border-0">
-                      <div className="card-body p-2 text-center">
-                        <small className="text-success d-block">На 100г</small>
-                        <strong className="text-success">{(selectedHistoryItem?.carbsPer100gCooked ?? 0).toFixed(1)}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="card bg-warning bg-opacity-10 border-0">
-                      <div className="card-body p-2 text-center">
-                        <small className="text-warning d-block">ХО всього</small>
-                        <strong className="text-warning">{((selectedHistoryItem?.totalCarbs ?? 0) / 12).toFixed(1)}</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-12">
-                    <div className="card bg-light border-0">
-                      <div className="card-body p-2 text-center">
-                        <small className="text-muted d-block">Вага готової страви</small>
-                        <strong>{(selectedHistoryItem?.cookedWeight ?? 0).toFixed(0)}г</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer border-0">
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  onClick={() => setSelectedHistoryItem(null)}
-                >
-                  Закрити
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

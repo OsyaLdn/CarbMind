@@ -8,19 +8,25 @@ type UserDishLibraryProps = {
 
 export function UserDishLibrary({ userDishes, onDelete }: UserDishLibraryProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dishToDelete, setDishToDelete] = useState<UserSavedDish | null>(null);
 
-  const handleDelete = (dish: UserSavedDish) => {
-    if (confirm(`Видалити "${dish.name}" з бібліотеки?`)) {
-      onDelete(dish.id);
+  const handleDeleteClick = (dish: UserSavedDish) => {
+    setDishToDelete(dish);
+  };
+
+  const handleConfirmDelete = () => {
+    if (dishToDelete) {
+      onDelete(dishToDelete.id);
+      setDishToDelete(null);
     }
   };
 
   if (userDishes.length === 0) {
     return (
       <div className="alert alert-info">
-        <h6>📚 Ваша бібліотека рецептів порожня</h6>
+        <h6>📚 Ваша бібліотека страв порожня</h6>
         <p className="mb-0 small">
-          Створіть страву у режимі "Страва з інгредієнтів" і збережіть її як рецепт. 
+          Створіть страву у режимі "Страва з інгредієнтів" і збережіть її як заготовку. 
           Потім ви зможете використовувати її як інгредієнт для інших страв!
         </p>
       </div>
@@ -29,7 +35,7 @@ export function UserDishLibrary({ userDishes, onDelete }: UserDishLibraryProps) 
 
   return (
     <div>
-      <h5 className="mb-3">📚 Мої збережені рецепти ({userDishes.length})</h5>
+      <h5 className="mb-3">📚 Мої готові страви ({userDishes.length})</h5>
       
       <div className="list-group">
         {userDishes.map(dish => (
@@ -56,7 +62,7 @@ export function UserDishLibrary({ userDishes, onDelete }: UserDishLibraryProps) 
               </div>
               <button
                 className="btn btn-sm btn-outline-danger"
-                onClick={() => handleDelete(dish)}
+                onClick={() => handleDeleteClick(dish)}
               >
                 🗑️
               </button>
@@ -85,6 +91,47 @@ export function UserDishLibrary({ userDishes, onDelete }: UserDishLibraryProps) 
           </div>
         ))}
       </div>
+
+      {/* Bootstrap Delete Confirmation Modal */}
+      {dishToDelete && (
+        <div 
+          className="modal show d-block" 
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setDishToDelete(null)}
+        >
+          <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Підтвердження видалення</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setDishToDelete(null)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <p>Ви впевнені, що хочете видалити <strong>"{dishToDelete.name}"</strong> з бібліотеки?</p>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setDishToDelete(null)}
+                >
+                  Скасувати
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={handleConfirmDelete}
+                >
+                  Видалити
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

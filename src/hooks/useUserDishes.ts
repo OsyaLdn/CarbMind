@@ -1,51 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { UserSavedDish } from '../types/userDish';
 import * as storage from '../lib/userDishStorage';
-import { loadDishHistory } from '../lib/dishHistoryStorage';
 
 export function useUserDishes() {
-  // Helper function to load and combine all dishes
+  // Helper function to load dishes
   const loadAllDishes = useCallback(() => {
-    const savedRecipes = storage.loadUserDishes();
-    const dishHistory = loadDishHistory();
-    
-    // Convert dish history items to UserSavedDish format
-    const historyAsDishes: UserSavedDish[] = dishHistory.map(item => ({
-      id: `history-${item.id}`,
-      name: item.dishName,
-      carbsPer100g: item.result.carbsPer100gDish,
-      breadUnitsPer100g: item.result.carbsPer100gDish / 12,
-      createdAt: item.createdAt,
-      ingredients: item.ingredients,
-      notes: `З історії • ${item.ingredients.length} інгредієнтів`,
-    }));
-    
-    // Combine both sources
-    return [...savedRecipes, ...historyAsDishes];
+    return storage.loadUserDishes();
   }, []);
 
-  // Initialize state with lazy initializer to avoid setting state in useEffect
-  const [userDishes, setUserDishes] = useState<UserSavedDish[]>(() => {
-    const savedRecipes = storage.loadUserDishes();
-    const dishHistory = loadDishHistory();
-    
-    const historyAsDishes: UserSavedDish[] = dishHistory.map(item => ({
-      id: `history-${item.id}`,
-      name: item.dishName,
-      carbsPer100g: item.result.carbsPer100gDish,
-      breadUnitsPer100g: item.result.carbsPer100gDish / 12,
-      createdAt: item.createdAt,
-      ingredients: item.ingredients,
-      notes: `З історії • ${item.ingredients.length} інгредієнтів`,
-    }));
-    
-    return [...savedRecipes, ...historyAsDishes];
-  });
+  // Initialize state with lazy initializer
+  const [userDishes, setUserDishes] = useState<UserSavedDish[]>(() => storage.loadUserDishes());
 
   // Listen for storage events to update when data changes in other tabs
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'carb_mind_user_dishes' || e.key === 'carb_mind_dish_history') {
+      if (e.key === 'carb_mind_user_dishes') {
         setUserDishes(loadAllDishes());
       }
     };
