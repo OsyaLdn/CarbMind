@@ -15,8 +15,16 @@ import type { BoiledDishInput, BoiledDishResult } from '../types/boiledDish';
 export function calculateBoiledDish(input: BoiledDishInput): BoiledDishResult {
   const { rawWeight, rawCarbsPer100g, emptyBowlWeight, fullBowlWeight } = input;
 
+  console.log('rawWeight', rawWeight);
+  console.log('rawCarbsPer100g', rawCarbsPer100g);
+  console.log('emptyBowlWeight', emptyBowlWeight);
+  console.log('fullBowlWeight', fullBowlWeight);
+
   const totalCarbs = (rawWeight / 100) * rawCarbsPer100g;
   const cookedWeight = fullBowlWeight - emptyBowlWeight;
+  
+  console.log('totalCarbs', totalCarbs);
+  console.log('cookedWeight', cookedWeight);
 
   if (cookedWeight <= 0) throw new Error("Cooked weight must be > 0");
 

@@ -15,5 +15,7 @@ export type BoiledDishResult = {
 export type BoiledDishHistoryItem = BoiledDishInput & BoiledDishResult & {
   id: string;
   createdAt: string;
+  mealName?: string;
+  timeOfDay?: string;
 };
 
