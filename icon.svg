@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="115" fill="#0d6efd"/>
+  <g fill="#ffffff">
+    <!-- Wheat/Carb symbol -->
+    <path d="M256 80 L256 200 M256 140 L220 120 M256 140 L292 120 M256 170 L220 150 M256 170 L292 150" 
+          stroke="#ffffff" stroke-width="16" fill="none" stroke-linecap="round"/>
+    
+    <!-- Calculator display -->
+    <rect x="140" y="220" width="232" height="80" rx="8" fill="#ffffff"/>
+    <text x="256" y="275" font-family="Arial, sans-serif" font-size="48" font-weight="bold" 
+          text-anchor="middle" fill="#0d6efd">12</text>
+    
+    <!-- Calculator buttons -->
+    <rect x="160" y="320" width="55" height="45" rx="8" fill="#ffffff" opacity="0.9"/>
+    <rect x="230" y="320" width="55" height="45" rx="8" fill="#ffffff" opacity="0.9"/>
+    <rect x="300" y="320" width="55" height="45" rx="8" fill="#ffffff" opacity="0.9"/>
+    
+    <rect x="160" y="380" width="55" height="45" rx="8" fill="#ffffff" opacity="0.9"/>
+    <rect x="230" y="380" width="55" height="45" rx="8" fill="#ffffff" opacity="0.9"/>
+    <rect x="300" y="380" width="55" height="45" rx="8" fill="#ffffff" opacity="0.9"/>
+  </g>
+</svg>
